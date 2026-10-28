@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mini-MELiSSA MVP</title>
+<style>
+body{margin:0;background:#e8eff1;color:#12313a;font:15px/1.45 system-ui,sans-serif}
+main{max-width:900px;margin:0 auto;padding:20px}
+h1{font-size:22px;margin:0 0 2px}h2{font-size:15px;margin:0 0 8px}
+.sub{color:#5b7480;font-size:13px}
+.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:14px 0}
+.card{background:#fff;border:1px solid #c9d6da;border-radius:8px;padding:12px;margin-bottom:12px}
+.big{font-size:24px;font-weight:600}
+button,input{font:inherit;padding:6px 12px;border:1px solid #c9d6da;border-radius:6px;background:#fff}
+button{cursor:pointer}button:hover{border-color:#138a72}
+canvas{width:100%;height:200px;display:block}
+.alert{padding:6px 0;border-bottom:1px solid #e3eaec;font-size:14px}
+</style></head><body><main>
+<h1>Mini-MELiSSA photobioreactor</h1>
+<div class="sub" id="mode"></div>
+<div class="row">
+ <div class="card"><div class="sub">Temperature</div><div class="big" id="temp">-</div></div>
+ <div class="card"><div class="sub">TDS (ppm)</div><div class="big" id="tds">-</div></div>
+ <div class="card"><div class="sub">Turbidity (V)</div><div class="big" id="turb">-</div></div>
+ <div class="card"><div class="sub">Biomass estimate (g/L)</div><div class="big" id="est">-</div></div>
+</div>
+<div class="card"><h2>Biomass: sensor reading (dots) vs filter estimate (line)</h2><canvas id="c"></canvas>
+ <p><button id="fault">Simulate contamination (sim mode)</button>
+ <button id="blackout">Toggle comms blackout</button></p></div>
+<div class="card"><h2>Alerts (rule-based agent)</h2><div id="log"></div></div>
+<div class="card"><h2>AI crew assistant (Claude)</h2>
+ <input id="q" placeholder="Ask about the culture..." style="width:65%">
+ <button id="ask">Ask</button> <button id="sum">Summarize status</button>
+ <p id="ans" style="white-space:pre-wrap"></p></div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+async function post(url,body){const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});return r.json()}
+function draw(h){
+ const c=$('c'),w=c.clientWidth,ht=c.clientHeight,x=c.getContext('2d');c.width=w;c.height=ht;
+ const X=i=>20+i/Math.max(h.length-1,1)*(w-30),Y=v=>ht-15-Math.min(v,3.5)/3.5*(ht-25);
+ x.fillStyle='#e8a33d';h.forEach((p,i)=>x.fillRect(X(i)-1,Y(p.raw)-1,2.5,2.5));
+ x.strokeStyle='#138a72';x.lineWidth=2;x.beginPath();h.forEach((p,i)=>i?x.lineTo(X(i),Y(p.est)):x.moveTo(X(i),Y(p.est)));x.stroke();
+}
+async function refresh(){
+ const d=await (await fetch('/api/state')).json(),s=d.state,f=(v,n)=>v==null?'-':v.toFixed(n);
+ $('temp').textContent=f(s.temp,1)+' °C';$('tds').textContent=f(s.tds,0);$('turb').textContent=f(s.turb_v,2);$('est').textContent=f(s.est,2);
+ $('mode').textContent='Mode: '+s.mode+(s.mode==='sim'?' (simulated data)':' (real sensors)')+' · hours: '+f(s.hours,0)+(s.blackout?' · COMMS BLACKOUT':'');
+ $('log').innerHTML='';d.log.forEach(e=>{const el=document.createElement('div');el.className='alert';el.textContent='h'+e.hours+' · '+e.kind+': '+e.text;$('log').appendChild(el)});
+ draw(d.history);
+}
+async function ask(q){$('ans').textContent='Thinking...';$('ans').textContent=(await post('/api/ask',{question:q})).answer}
+$('ask').onclick=()=>ask($('q').value);$('sum').onclick=()=>ask('Summarize the culture status and what the crew should do next.');
+$('blackout').onclick=()=>post('/api/blackout');$('fault').onclick=()=>post('/api/fault');
+setInterval(refresh,1000);refresh();
+</script></body></html>
